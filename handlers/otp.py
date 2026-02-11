@@ -5,7 +5,7 @@ from utils.login_manager import create_client, login_data, save_session
 import asyncio, re
 
 
-@bot.on_message(filters.private & filters.text & ~filters.command)
+@bot.on_message(filters.private & filters.text & ~filters.command(["start"]))
 async def login_flow(client, message):
     user_id = message.from_user.id
     text = message.text.strip()

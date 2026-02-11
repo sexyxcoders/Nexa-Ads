@@ -24,7 +24,8 @@ def get_cancel_button():
 
 
 async def _cleanup_login(user_id):
-    if user_id in login_
+    """Stop and remove any existing login session for a user."""
+    if user_id in login_data:
         app = login_data[user_id].get("app")
         if app:
             try:
@@ -34,11 +35,14 @@ async def _cleanup_login(user_id):
         login_data.pop(user_id, None)
 
 
+# ================= LOGIN FLOW =================
+
 @bot.on_message(filters.private & filters.text & ~filters.command(["start", "cancel"]))
 async def login_flow(client, message):
     user_id = message.from_user.id
     text = message.text.strip()
 
+    # If text is a phone number
     if text.startswith("+"):
         await _cleanup_login(user_id)
 
@@ -47,10 +51,12 @@ async def login_flow(client, message):
             return
 
         msg = await message.reply("📱 Sending verification code...\n⏳ Please wait...")
-        try:            app = await create_client(user_id)
+
+        try:
+            app = await create_client(user_id)
             sent_code = await app.send_code(text)
         except FloodWait as e:
-            await msg.edit_text(f"⏳ Too many requests. Please wait {e.value} seconds before trying again.")
+            await msg.edit_text(f"⏳ Too many requests. Wait {e.value} seconds and try again.")
             return
         except BadRequest as e:
             await msg.edit_text(f"⚠️ Invalid phone number: {str(e)}")
@@ -60,13 +66,13 @@ async def login_flow(client, message):
             await msg.edit_text("⚠️ Failed to send code. Please try again later.")
             return
 
-        # Store app + message ID for future editing
+        # Save session info
         login_data[user_id] = {
             "app": app,
             "phone": text,
             "phone_code_hash": sent_code.phone_code_hash,
             "awaiting_otp": True,
-            "last_msg_id": msg.id  # ← store message ID
+            "last_msg_id": msg.id
         }
 
         await msg.edit_text(
@@ -79,11 +85,11 @@ async def login_flow(client, message):
         )
         return
 
-    # Handle OTP
+    # Handle OTP verification
     if user_id in login_data and login_data[user_id].get("awaiting_otp"):
         return await otp_verify(message)
 
-    # Handle password
+    # Handle 2FA password
     if user_id in login_data and login_data[user_id].get("awaiting_password"):
         return await password_verify(message)
 
@@ -93,13 +99,17 @@ async def login_flow(client, message):
     )
 
 
+# ================= CANCEL COMMAND =================
+
 @bot.on_message(filters.command("cancel") & filters.private)
 async def cancel_login_cmd(client, message):
     user_id = message.from_user.id
-    await _cleanup_login(user_id)    await message.reply("✅ Login process cancelled.\n\nUse /start to begin again.")
+    await _cleanup_login(user_id)
+    await message.reply("✅ Login process cancelled.\n\nUse /start to begin again.")
 
 
-# --- OTP & Password Handlers ---
+# ================= OTP VERIFY =================
+
 async def otp_verify(message):
     user_id = message.from_user.id
     raw = message.text.strip()
@@ -110,7 +120,7 @@ async def otp_verify(message):
         return
 
     data = login_data.get(user_id)
-    if not data or "app" not in 
+    if not data or "app" not in data:
         await message.reply("⚠️ Login session expired. Please start again with your phone number.")
         return
 
@@ -120,12 +130,11 @@ async def otp_verify(message):
 
     try:
         await app.sign_in(phone_number=phone, phone_code_hash=phone_code_hash, phone_code=otp)
-
         session_string = await app.export_session_string()
         save_session(user_id, session_string)
 
         # Edit last message to success
-        if "last_msg_id" in 
+        if "last_msg_id" in data:
             try:
                 await message._client.edit_message_text(
                     chat_id=message.chat.id,
@@ -141,31 +150,25 @@ async def otp_verify(message):
         await _cleanup_login(user_id)
 
     except SessionPasswordNeeded:
-        # Switch to password mode + update message
         data["awaiting_password"] = True
         data.pop("awaiting_otp", None)
 
-        # Update the original message to prompt for password        if "last_msg_id" in 
+        if "last_msg_id" in data:
             try:
                 await message._client.edit_message_text(
                     chat_id=message.chat.id,
                     message_id=data["last_msg_id"],
-                    text=(
-                        "🔐 **Two-Step Verification** is enabled.\n\n"
-                        "Please send your account password to continue."
-                    ),
+                    text="🔐 **Two-Step Verification** is enabled.\n\nPlease send your account password to continue.",
                     reply_markup=get_cancel_button()
                 )
             except Exception:
                 await message.reply(
-                    "🔐 **Two-Step Verification** is enabled.\n\n"
-                    "Please send your account password to continue.",
+                    "🔐 **Two-Step Verification** is enabled.\n\nPlease send your account password to continue.",
                     reply_markup=get_cancel_button()
                 )
         else:
             await message.reply(
-                "🔐 **Two-Step Verification** is enabled.\n\n"
-                "Please send your account password to continue.",
+                "🔐 **Two-Step Verification** is enabled.\n\nPlease send your account password to continue.",
                 reply_markup=get_cancel_button()
             )
 
@@ -175,18 +178,20 @@ async def otp_verify(message):
         await message.reply("⏰ The code has expired. Please restart by sending your phone number.")
     except FloodWait as e:
         await message.reply(f"⏳ Too many attempts. Wait {e.value} seconds before retrying.")
-    except Exception as e:
+    except Exception:
         logging.exception("Unexpected error during OTP verification")
         await message.reply("⚠️ An unexpected error occurred. Please restart the login process.")
         await _cleanup_login(user_id)
 
+
+# ================= PASSWORD VERIFY =================
 
 async def password_verify(message):
     user_id = message.from_user.id
     password = message.text.strip()
 
     data = login_data.get(user_id)
-    if not data or "app" not in 
+    if not data or "app" not in data:
         await message.reply("⚠️ Login session expired. Please start again with your phone number.")
         return
 
@@ -197,7 +202,7 @@ async def password_verify(message):
         session_string = await app.export_session_string()
         save_session(user_id, session_string)
 
-        if "last_msg_id" in 
+        if "last_msg_id" in data:
             try:
                 await message._client.edit_message_text(
                     chat_id=message.chat.id,
@@ -216,20 +221,21 @@ async def password_verify(message):
         await message.reply("❌ Incorrect password. Please try again.")
     except FloodWait as e:
         await message.reply(f"⏳ Too many attempts. Wait {e.value} seconds before retrying.")
-    except Exception as e:
+    except Exception:
         logging.exception("Unexpected error during password verification")
         await message.reply("⚠️ An error occurred. Please restart the login process.")
         await _cleanup_login(user_id)
 
 
-# --- Cancel via Inline Button ---
+# ================= CANCEL INLINE =================
+
 @bot.on_callback_query(filters.regex("^cancel_login$"))
 async def cancel_login_inline(client, callback_query):
     user_id = callback_query.from_user.id
     await _cleanup_login(user_id)
 
     # Return to start screen
-    from .start import get_main_menu  # Ensure this function exists in start.py
+    from .start import get_main_menu
 
     await callback_query.message.edit_text(
         "✨ Welcome to Nexa Ads Bot ✨\n\n"

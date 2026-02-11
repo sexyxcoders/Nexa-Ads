@@ -30,7 +30,6 @@ async def start_cmd(client, message):
     user_id = message.from_user.id
     channel = (FORCE_JOIN_CHANNEL or "").replace("@", "").strip()
 
-    # Skip force join if channel is not configured
     if channel:
         try:
             await client.get_chat_member(channel, user_id)
@@ -47,10 +46,9 @@ async def start_cmd(client, message):
                 "Please contact the owner to fix this."
             )
             return
-        except Exception:            await message.reply_text("⚠️ Unable to verify your membership. Please try again later.")
-            return
+        except Exception:
+            await message.reply_text("⚠️ Unable to verify your membership. Please try again later.")            return
 
-    # Show main menu
     caption = (
         "✨ Welcome to Nexa Ads Bot ✨\n\n"
         "💎 Your Premium Ad Automation Platform\n\n"
@@ -67,7 +65,6 @@ async def start_cmd(client, message):
         else:
             await message.reply_text(caption, reply_markup=get_main_menu())
     except Exception:
-        # Fallback if image fails to load
         await message.reply_text(caption, reply_markup=get_main_menu())
 
 
@@ -77,26 +74,34 @@ async def recheck_join(client, callback_query):
     channel = (FORCE_JOIN_CHANNEL or "").replace("@", "").strip()
 
     if not channel:
-        # No channel required — show main screen
-        await _show_main_screen(callback_query.message)
+        caption = (
+            "✨ Welcome to Nexa Ads Bot ✨\n\n"
+            "💎 Your Premium Ad Automation Platform\n\n"
+            "🔐 To unlock all features, connect your Telegram account below."
+        )
+        if START_IMAGE:
+            await callback_query.message.edit_media(
+                InputMediaPhoto(START_IMAGE, caption=caption),
+                reply_markup=get_main_menu()
+            )
+        else:
+            await callback_query.message.edit_text(caption, reply_markup=get_main_menu())
         await callback_query.answer("✅ Access granted!", show_alert=False)
         return
 
     try:
         await client.get_chat_member(channel, user_id)
 
-        # Edit message to main screen
         caption = (
             "✨ Welcome to Nexa Ads Bot ✨\n\n"
             "💎 Your Premium Ad Automation Platform\n\n"
             "🔐 To unlock all features, connect your Telegram account below."
-        )
-
-        if START_IMAGE:
+        )        if START_IMAGE:
             await callback_query.message.edit_media(
                 InputMediaPhoto(START_IMAGE, caption=caption),
                 reply_markup=get_main_menu()
-            )        else:
+            )
+        else:
             await callback_query.message.edit_text(caption, reply_markup=get_main_menu())
 
         await callback_query.answer("✅ Thank you for joining!", show_alert=False)
@@ -107,16 +112,3 @@ async def recheck_join(client, callback_query):
         await callback_query.answer("⚠️ Bot isn't admin in the channel.", show_alert=True)
     except Exception:
         await callback_query.answer("⚠️ Verification failed. Try again.", show_alert=True)
-
-
-async def _show_main_screen(message):
-    """Helper to display the main start screen."""
-    caption = (
-        "✨ Welcome to Nexa Ads Bot ✨\n\n"
-        "💎 Your Premium Ad Automation Platform\n\n"
-        "🔐 To unlock all features, connect your Telegram account below."
-    )
-    if START_IMAGE:
-        await message.reply_photo(photo=START_IMAGE, caption=caption, reply_markup=get_main_menu())
-    else:
-        await message.reply_text(caption, reply_markup=get_main_menu())

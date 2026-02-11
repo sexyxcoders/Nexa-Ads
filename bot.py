@@ -8,11 +8,11 @@ bot = Client(
     bot_token=BOT_TOKEN
 )
 
-# Handlers load
-import handlers.start
-import handlers.connect
-import handlers.otp
-
 if __name__ == "__main__":
+    # Import handlers ONLY when bot is starting
+    import handlers.start
+    import handlers.connect
+    import handlers.otp
+
     print("🚀 Bot Running...")
     bot.run()

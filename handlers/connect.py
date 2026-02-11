@@ -11,7 +11,7 @@ async def connect_account(client, callback_query):
     user_id = callback_query.from_user.id
 
     # Clear any existing login state for this user
-    if user_id in login_
+    if user_id in login_data:  # ✅ fixed variable name and added colon
         old_app = login_data[user_id].get("app")
         if old_app:
             try:
